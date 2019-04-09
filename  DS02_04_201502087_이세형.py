@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import pyaudio
 import sys
 import wave
 
@@ -7,14 +8,15 @@ from io import StringIO
 
 import alsaaudio
 import colorama
+import pyaudio                          #
 import numpy as np
 
 from reedsolo import RSCodec, ReedSolomonError
 from termcolor import cprint
 from pyfiglet import figlet_format
 
-HANDSHAKE_START_HZ = 8192
-HANDSHAKE_END_HZ = 8192 + 512
+HANDSHAKE_START_HZ = 4096
+HANDSHAKE_END_HZ = 5120 + 1024
 
 START_HZ = 1024
 STEP_HZ = 256
@@ -114,7 +116,42 @@ def extract_packet(freqs):
     freqs = freqs[::2]
     bit_chunks = [int(round((f - START_HZ) / STEP_HZ)) for f in freqs]
     bit_chunks = [c for c in bit_chunks[1:] if 0 <= c < (2 ** BITS)]
+    # print(bit_chunks)
+    # for a in bit_chunks :
+    #     print(a)
+    # b = bytearray(decode_bitchunks(BITS, bit_chunks))
+    # print(b)
     return bytearray(decode_bitchunks(BITS, bit_chunks))
+
+def out(output):
+    # print(output)
+    outputlist = []
+    for byteOfOutput in output:
+        tmp = format(byteOfOutput,'08b')
+        frontOfTmp = tmp[:4]
+        backOfTmp = tmp[4:]
+        # print(frontOfTmp)
+        # print(backOfTmp)
+        outputlist.append(int(frontOfTmp,2))
+        outputlist.append(int(backOfTmp,2))
+        # print(outputlist)
+    # b'x16/x32/a3 -> [1,6,3,2,10,3] 로 만들어줌.
+    # print(outputlist)
+
+    outfreqs = [ x * STEP_HZ + START_HZ  for x in outputlist]
+    #주파수로 다시 래핑해주기.
+    # print(outfreqs)
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=pyaudio.paFloat32,channels=1,rate=44100,output = True)
+    # p = pyaudio.PyAudio()
+    for freq in outfreqs:
+        samples = (np.sin(2*np.pi*np.arange(44100*6)*freq/44100)).astype(np.float32)
+        stream.write(samples)
+        print("freq : " + str(freq))
+
+
+
 
 def display(s):
     cprint(figlet_format(s.replace(' ', '   '), font='doom'), 'yellow')
@@ -125,7 +162,6 @@ def listen_linux(frame_rate=44100, interval=0.1):
     mic.setchannels(1)
     mic.setrate(44100)
     mic.setformat(alsaaudio.PCM_FORMAT_S16_LE)
-
     num_frames = int(round((interval / 2) * frame_rate))
     mic.setperiodsize(num_frames)
     print("start...")
@@ -144,11 +180,33 @@ def listen_linux(frame_rate=44100, interval=0.1):
 
         if in_packet and match(dom, HANDSHAKE_END_HZ):
             byte_stream = extract_packet(packet)
+            # print(byte_stream)
+
             try:
                 byte_stream = RSCodec(FEC_BYTES).decode(byte_stream)
+                # print(byte_stream)
+                # print(type(byte_stream))  # bytearray
                 byte_stream = byte_stream.decode("utf-8")
+                # print(type(byte_stream)) # '201502087 a' // string
 
-                display(byte_stream)
+                datas = byte_stream.split(); #list
+
+                if "201502087" in datas:
+                    datas.remove("201502087"); # remove 201502087 in list
+                    # print(datas)
+                    output = " ".join(datas) # output is str of removed datas(list) // string
+                # print(output)
+                    output = output.encode("utf-8")
+                # print(output)
+                    output = RSCodec(FEC_BYTES).encode(output) # output bytearray
+                    #이제 이거를 소리로 바꾸면 끝.
+                    out(output)
+
+                    for data in datas:
+                        display(data)
+                    # 학번을 제외한 데이터들에 대해 디스플레이 해준다.
+                    # display(datas)
+
             except ReedSolomonError as e:
                 pass
                 # print("{}: {}".format(e, byte_stream))
@@ -164,4 +222,20 @@ if __name__ == '__main__':
     colorama.init(strip=not sys.stdout.isatty())
 
     #decode_file(sys.argv[1], float(sys.argv[2]))
+    # with noalsaerr():
+    #     p = pyaudio.PyAudio()
+    #
+    # volume = 0.5     # range [0.0, 1.0]
+    # fs = 44100       # sampling rate, Hz, must be integer
+    # duration = 1.0   # in seconds, may be float
+    # f = 440.0        # sine frequency, Hz, may be float
+    #
+    # # generate samples, note conversion to float32 array
+    # samples = (np.sin(2*np.pi*np.arange(fs*duration)*f/fs)).astype(np.float32)
+    #
+    # # for paFloat32 sample values must be in range [-1.0, 1.0]
+    # stream = p.open(format=pyaudio.paFloat32,channels=1,rate=fs,output=True)
+    #
+    #             # play. May repeat with different volume values (if done interactively)
+    # stream.write(volume*samples)
     listen_linux()
