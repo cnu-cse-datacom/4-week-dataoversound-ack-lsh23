@@ -146,7 +146,7 @@ def out(output):
     stream = p.open(format=pyaudio.paFloat32,channels=1,rate=44100,output = True)
     # p = pyaudio.PyAudio()
     for freq in outfreqs:
-        samples = (np.sin(2*np.pi*np.arange(44100*6)*freq/44100)).astype(np.float32)
+        samples = (np.sin(2*np.pi*np.arange(44100*0.6)*freq/44100)).astype(np.float32)
         stream.write(samples)
         print("freq : " + str(freq))
 
